@@ -7,6 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="競馬予想">
   <title>競馬予想</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -427,7 +428,8 @@ function renderDetail() {
       <button class="btn-secondary" onclick="openAddHorseModal()">＋ 馬を追加</button>
       <button class="btn-primary" onclick="lockRace()">予想を確定</button>
     </div>
-    <div style="padding:0 16px 8px">
+    <div style="padding:0 16px 8px;display:flex;flex-direction:column;gap:8px">
+      <button class="btn-secondary" onclick="openPDFImportModal()">📄 PDFから読み込む</button>
       <button class="btn-secondary" onclick="openEditRaceModal()">レース情報を編集</button>
     </div>` :
     r.status === 'locked' ? `
@@ -740,6 +742,141 @@ function saveResult() {
   if (!r1) { alert('1着を入力してください'); return; }
   const r = db.races.find(x => x.id === raceId);
   if (r) { r.result = { '1': r1, '2': r2, '3': r3 }; r.status = 'completed'; }
+  saveDB(); closeModal(); renderDetail();
+}
+
+// ══════════════════════════════════════════
+//  PDF Import
+// ══════════════════════════════════════════
+const PDF_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+let pdfHorses = [];
+
+function openPDFImportModal() {
+  openModal(`
+    <div class="modal-title">PDFから読み込む</div>
+    <div style="background:var(--surface2);border-radius:10px;padding:12px;margin-bottom:16px;font-size:13px;color:var(--text-muted);line-height:1.6">
+      netkeibaの出馬表PDFを選択してください。<br>馬番・馬名を自動で認識します。
+    </div>
+    <label class="btn-primary" style="display:block;text-align:center;cursor:pointer">
+      PDFファイルを選択
+      <input type="file" accept=".pdf,application/pdf" style="display:none" onchange="handlePDFSelect(this)">
+    </label>
+    <div id="pdf-status" style="margin-top:16px;text-align:center;color:var(--text-muted);font-size:14px"></div>
+    <div id="pdf-result"></div>`);
+}
+
+async function handlePDFSelect(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const status = document.getElementById('pdf-status');
+  status.textContent = '読み込み中...';
+
+  try {
+    if (!window.pdfjsLib) throw new Error('PDF.jsの読み込みに失敗しました');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER;
+
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+
+    const items = [];
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      for (const it of content.items) {
+        const t = it.str.trim();
+        if (t) items.push({ text: t, x: Math.round(it.transform[4]), y: Math.round(it.transform[5]) });
+      }
+    }
+
+    const horses = parsePDFHorses(items);
+
+    if (!horses.length) {
+      status.innerHTML = `<span style="color:var(--red)">馬データを自動認識できませんでした。</span><br><small>PDFの形式が異なる可能性があります。</small>`;
+      return;
+    }
+
+    status.textContent = `${horses.length}頭を認識しました`;
+    pdfHorses = horses;
+    renderPDFConfirm(horses);
+
+  } catch (e) {
+    status.innerHTML = `<span style="color:var(--red)">エラー: ${e.message}</span>`;
+  }
+}
+
+function parsePDFHorses(items) {
+  // Y降順（PDFのY座標は下から）→ X昇順でソートして行を再構築
+  items.sort((a, b) => {
+    const dy = b.y - a.y;
+    return Math.abs(dy) > 4 ? dy : a.x - b.x;
+  });
+
+  // 近いY座標をグループ化して「行」に
+  const rows = [];
+  let rowY = null, row = [];
+  for (const it of items) {
+    if (rowY === null || Math.abs(it.y - rowY) <= 4) {
+      row.push(it.text); rowY = it.y;
+    } else {
+      if (row.length) rows.push(row);
+      row = [it.text]; rowY = it.y;
+    }
+  }
+  if (row.length) rows.push(row);
+
+  const horses = [];
+  const seen = new Set();
+
+  for (const r of rows) {
+    // 行の最初の方に1〜18の数字があれば馬番候補
+    for (let i = 0; i < Math.min(4, r.length); i++) {
+      const n = parseInt(r[i]);
+      if (isNaN(n) || n < 1 || n > 18 || String(n) !== r[i] || seen.has(n)) continue;
+      // 同じ行で全角カタカナの馬名を探す
+      for (let j = i + 1; j < r.length; j++) {
+        if (/^[ァ-ヶーヴ]{2,}$/.test(r[j])) {
+          seen.add(n);
+          horses.push({ number: n, name: r[j] });
+          break;
+        }
+      }
+      break;
+    }
+  }
+
+  return horses.sort((a, b) => a.number - b.number);
+}
+
+function renderPDFConfirm(horses) {
+  document.getElementById('pdf-result').innerHTML = `
+    <div style="margin-top:16px">
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">内容を確認・修正してからインポートしてください</div>
+      <div style="background:var(--surface2);border-radius:10px;overflow:hidden;margin-bottom:12px">
+        ${horses.map((h, i) => `
+          <div style="display:flex;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border);gap:8px">
+            <input type="checkbox" id="pc-${i}" checked style="width:18px;height:18px;accent-color:var(--accent);flex-shrink:0">
+            <span style="color:var(--text-muted);width:22px;font-size:13px;flex-shrink:0">${h.number}</span>
+            <input type="text" id="pn-${i}" value="${h.name}"
+              style="flex:1;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:15px;font-weight:600;outline:none;padding-bottom:2px">
+          </div>`).join('')}
+      </div>
+      <button class="btn-primary" onclick="importPDFHorses()">インポートする</button>
+    </div>`;
+}
+
+function importPDFHorses() {
+  const r = db.races.find(x => x.id === raceId);
+  if (!r) return;
+  let count = 0;
+  pdfHorses.forEach((h, i) => {
+    const checked = document.getElementById('pc-' + i)?.checked;
+    const name = document.getElementById('pn-' + i)?.value.trim();
+    if (!checked || !name) return;
+    if (!r.horses.find(x => x.number === h.number)) {
+      r.horses.push({ id: uid(), number: h.number, name, mark: '', notes: '' });
+      count++;
+    }
+  });
   saveDB(); closeModal(); renderDetail();
 }
 
