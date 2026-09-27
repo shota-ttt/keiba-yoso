@@ -421,6 +421,25 @@ function renderDetail() {
                             .filter(h => h.mark && h.mark !== '×');
   const gc = g => ({ G1:'g1', G2:'g2', G3:'g3' })[g] || 'other';
 
+  const b = r.bias || {};
+  const bStyleLabel = { nige:'逃げ・先行有利', sashi:'差し・追込有利', flat:'フラット' }[b.style] || '';
+  const bPosLabel = { in:'内有利', out:'外有利', flat:'フラット' }[b.position] || '';
+  const hasBias = !!(b.style || b.position || b.condition || b.memo);
+  const biasHtml = `
+    <div class="section-label">本日のトラックバイアス</div>
+    <div class="card" style="padding:14px 16px">
+      ${hasBias ? `
+        <div>
+          ${bStyleLabel ? `<span class="mark-pill">${bStyleLabel}</span>` : ''}
+          ${bPosLabel ? `<span class="mark-pill">${bPosLabel}</span>` : ''}
+          ${b.condition ? `<span class="mark-pill">馬場: ${b.condition}</span>` : ''}
+        </div>
+        ${b.memo ? `<div class="horse-note" style="margin-top:8px;white-space:pre-wrap">${b.memo}</div>` : ''}
+        <button class="btn-secondary" style="margin-top:12px" onclick="openBiasModal()">バイアスを編集</button>` : `
+        <div style="text-align:center;color:var(--text-muted);padding:8px 0 12px">まだ入力されていません</div>
+        <button class="btn-primary" onclick="openBiasModal()">トラックバイアスを入力</button>`}
+    </div>`;
+
   const resultHtml = r.status === 'completed' && r.result ? `
     <div class="section-label">レース結果</div>
     <div style="padding:0 16px 4px">
@@ -441,7 +460,7 @@ function renderDetail() {
 
   const scored = horses.filter(h => h.scoring && Object.keys(h.scoring).some(k => h.scoring[k] !== ''));
   const rankHtml = scored.length ? (() => {
-    const ranked = horses.map(h => ({ h, s: calcScore(h.scoring || {}) }))
+    const ranked = horses.map(h => ({ h, s: calcScore(h.scoring || {}, h, r) }))
                          .sort((a, b) => b.s - a.s);
     return `
     <div class="section-label">スコアランキング</div>
@@ -455,7 +474,7 @@ function renderDetail() {
           <div class="rank-circle ${rc}">${i + 1}</div>
           <div style="flex:1">
             <div class="horse-name">${h.name}</div>
-            ${hasScore ? `<div class="horse-note">近走${calcPartScore(h.scoring,'recent')} / 適性${calcPartScore(h.scoring,'course')} / 質${calcPartScore(h.scoring,'quality')} / 穴${calcPartScore(h.scoring,'ana')} / 厩舎${calcPartScore(h.scoring,'stable')}</div>` : ''}
+            ${hasScore ? `<div class="horse-note">近走${calcPartScore(h.scoring,'recent',h,r)} / 適性${calcPartScore(h.scoring,'course',h,r)} / 質${calcPartScore(h.scoring,'quality',h,r)} / 穴${calcPartScore(h.scoring,'ana',h,r)} / 厩舎${calcPartScore(h.scoring,'stable',h,r)} ／バイアス${calcPartScore(h.scoring,'bias',h,r)}</div>` : ''}
           </div>
           ${isAna ? `<span class="ana-pill">穴候補</span>` : ''}
           <span class="score-pts ${hasScore ? '' : 'none'}">${hasScore ? s + '点' : '未入力'}</span>
@@ -512,6 +531,7 @@ function renderDetail() {
         <div style="margin-top:4px"><span class="grade-badge ${gc(r.grade)}">${r.grade}</span></div>
       </div>
     </div>
+    ${biasHtml}
     ${resultHtml}
     ${markedHtml}
     ${rankHtml}
@@ -687,13 +707,61 @@ function saveRace() {
   const notes = document.getElementById('f-notes').value.trim();
   if (!name) { alert('レース名を入力してください'); return; }
   if (formCtx.type === 'add-race') {
-    db.races.push({ id: uid(), name, grade, date, venue, course, notes, status: 'draft', horses: [], result: null });
+    db.races.push({ id: uid(), name, grade, date, venue, course, notes, status: 'draft', horses: [], result: null, bias: { style: '', position: '', condition: '', memo: '' } });
   } else {
     const r = db.races.find(x => x.id === raceId);
     if (r) Object.assign(r, { name, grade, date, venue, course, notes });
   }
   saveDB(); closeModal();
   view === 'detail' ? renderDetail() : renderList();
+}
+
+// ── Track Bias ──
+function openBiasModal() {
+  const r = db.races.find(x => x.id === raceId);
+  if (!r) return;
+  const b = r.bias || { style: '', position: '', condition: '', memo: '' };
+  formCtx = { type: 'bias' };
+  const styles = [['', '選択してください'], ['nige', '逃げ・先行有利'], ['sashi', '差し・追込有利'], ['flat', 'フラット']];
+  const positions = [['', '選択してください'], ['in', '内有利'], ['out', '外有利'], ['flat', 'フラット']];
+  const conditions = ['良', '稍重', '重', '不良'];
+  openModal(`
+    <div class="modal-title">本日のトラックバイアス</div>
+    <div class="form-group">
+      <label class="form-label">脚質傾向</label>
+      <select class="form-select" id="f-bias-style">
+        ${styles.map(([v,l]) => `<option value="${v}" ${v===b.style?'selected':''}>${l}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">内外傾向</label>
+      <select class="form-select" id="f-bias-position">
+        ${positions.map(([v,l]) => `<option value="${v}" ${v===b.position?'selected':''}>${l}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">馬場状態</label>
+      <select class="form-select" id="f-bias-condition">
+        <option value="" ${!b.condition?'selected':''}>選択してください</option>
+        ${conditions.map(c => `<option ${c===b.condition?'selected':''}>${c}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">メモ</label>
+      <textarea class="form-textarea" id="f-bias-memo" placeholder="前残り顕著、外差し届かず など">${b.memo||''}</textarea>
+    </div>
+    <button class="btn-primary" onclick="saveBias()">保存する</button>`);
+}
+
+function saveBias() {
+  const r = db.races.find(x => x.id === raceId);
+  if (!r) return;
+  const style = document.getElementById('f-bias-style').value;
+  const position = document.getElementById('f-bias-position').value;
+  const condition = document.getElementById('f-bias-condition').value;
+  const memo = document.getElementById('f-bias-memo').value.trim();
+  r.bias = { style, position, condition, memo };
+  saveDB(); closeModal(); renderDetail();
 }
 
 // ── Add Horse ──
@@ -733,6 +801,13 @@ function horseForm(h) {
       </div>
     </div>
     <div class="form-group">
+      <label class="form-label">脚質</label>
+      <select class="form-select" id="f-hstyle">
+        ${[['','選択してください'],['nige','逃げ'],['senko','先行'],['sashi','差し'],['oikomi','追込']]
+          .map(([v,l]) => `<option value="${v}" ${v===(h?.runningStyle||'')?'selected':''}>${l}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
       <label class="form-label">メモ</label>
       <textarea class="form-textarea" id="f-hnotes" placeholder="騎手・前走・特徴など">${h?.notes||''}</textarea>
     </div>
@@ -752,18 +827,19 @@ function pickMark(m, btn) {
 function saveHorse(thenScore = false, scoreHorseId = null) {
   const number = parseInt(document.getElementById('f-num').value) || null;
   const name = document.getElementById('f-hname').value.trim();
+  const runningStyle = document.getElementById('f-hstyle').value;
   const notes = document.getElementById('f-hnotes').value.trim();
   if (!name) { alert('馬名を入力してください'); return; }
   const r = db.races.find(x => x.id === raceId);
   if (!r) return;
   let savedId = scoreHorseId;
   if (formCtx.type === 'add-horse') {
-    const newHorse = { id: uid(), number, name, mark: selMark, notes, scoring: {} };
+    const newHorse = { id: uid(), number, name, mark: selMark, runningStyle, notes, scoring: {} };
     r.horses.push(newHorse);
     savedId = newHorse.id;
   } else {
     const h = r.horses.find(x => x.id === formCtx.horseId);
-    if (h) Object.assign(h, { number, name, mark: selMark, notes });
+    if (h) Object.assign(h, { number, name, mark: selMark, runningStyle, notes });
     savedId = formCtx.horseId;
   }
   saveDB();
@@ -1077,7 +1153,23 @@ function importDataReplace() {
 // ══════════════════════════════════════════
 //  Scoring
 // ══════════════════════════════════════════
-function calcScore(sc) {
+function calcBiasFit(horse, race) {
+  if (!horse || !race || !race.bias) return 0;
+  const b = race.bias;
+  let pts = 0;
+  const style = horse.runningStyle;
+  if (b.style === 'nige' && (style === 'nige' || style === 'senko')) pts += 10;
+  else if (b.style === 'sashi' && (style === 'sashi' || style === 'oikomi')) pts += 10;
+  const fieldSize = race.horses ? race.horses.length : 0;
+  if (b.position && b.position !== 'flat' && fieldSize && horse.number) {
+    const third = fieldSize / 3;
+    if (b.position === 'in' && horse.number <= third) pts += 5;
+    else if (b.position === 'out' && horse.number > fieldSize - third) pts += 5;
+  }
+  return pts;
+}
+
+function calcScore(sc, horse, race) {
   if (!sc) return 0;
   const gapMap  = { '0.1':15, '0.3':12, '0.5':9, '0.9':6, '1.4':3, '1.5up':0 };
   const lrMap   = { '1':10, '2':7, '3':5, '4-5':3, '6up':0 };
@@ -1110,10 +1202,11 @@ function calcScore(sc) {
        + (parseInt(sc.qualityMatch) || 0)
        + anaPts
        + (jrMap[sc.jockeyRate] ?? 0)
-       + (tpMap[sc.trainerResult] ?? 0);
+       + (tpMap[sc.trainerResult] ?? 0)
+       + calcBiasFit(horse, race);
 }
 
-function calcPartScore(sc, part) {
+function calcPartScore(sc, part, horse, race) {
   if (!sc) return 0;
   const gapMap = { '0.1':15, '0.3':12, '0.5':9, '0.9':6, '1.4':3, '1.5up':0 };
   const lrMap  = { '1':10, '2':7, '3':5, '4-5':3, '6up':0 };
@@ -1134,6 +1227,7 @@ function calcPartScore(sc, part) {
   if (part === 'quality') return (parseInt(sc.styleMatch)||0) + (parseInt(sc.qualityMatch)||0);
   if (part === 'ana')     return ana;
   if (part === 'stable')  return ({ '10up':5,'5-10':3,'under5':1 }[sc.jockeyRate]??0) + ({ win:5,run:3,none:1 }[sc.trainerResult]??0);
+  if (part === 'bias')    return calcBiasFit(horse, race);
   return 0;
 }
 
@@ -1281,8 +1375,10 @@ function openScoringModal(horseId) {
 
 function updateScorePreview() {
   const sc = readScoringFields();
+  const r = db.races.find(x => x.id === raceId);
+  const h = r?.horses.find(x => x.id === formCtx.horseId);
   const total = document.getElementById('sc-total');
-  if (total) total.textContent = calcScore(sc) + '点';
+  if (total) total.textContent = calcScore(sc, h, r) + '点';
 }
 
 function readScoringFields() {
