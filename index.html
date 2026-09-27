@@ -620,18 +620,25 @@ function getProxyBase(){
 }
 function setProxyBase(v){ localStorage.setItem('cfProxyBase', (v||'').trim()); }
 
+function extractRaceIdFromHref(href){
+  if(!href) return null;
+  let m = href.match(/\/race\/(\d{12})\/?/);
+  if(m) return m[1];
+  m = href.match(/[?&]race_id=(\d{12})/);
+  if(m) return m[1];
+  return null;
+}
 function parseDayListHTML(raw){
   let doc;
   try{ doc = new DOMParser().parseFromString(raw, 'text/html'); }
   catch(e){ doc = null; }
   if(!doc) return [];
-  const anchors = [...doc.querySelectorAll('a[href*="/race/"]')];
+  const anchors = [...doc.querySelectorAll('a[href]')];
   const seen = new Set();
   const races = [];
   anchors.forEach(a => {
-    const m = (a.getAttribute('href')||'').match(/\/race\/(\d{12})\/?/);
-    if(!m) return;
-    const id = m[1];
+    const id = extractRaceIdFromHref(a.getAttribute('href'));
+    if(!id) return;
     if(seen.has(id)) return;
     const parts = decomposeRaceId(id);
     if(!parts) return;
@@ -640,9 +647,9 @@ function parseDayListHTML(raw){
   });
   return races;
 }
-function venueDayUrl(venueCode, dateStr){
+function dayCardUrl(dateStr){
   const ymd = (dateStr||'').replace(/-/g,'');
-  return `https://db.netkeiba.com/race/sum/${venueCode}/${ymd}/`;
+  return `https://race.netkeiba.com/top/race_list.html?kaisai_date=${ymd}`;
 }
 
 async function fetchWithProxies(url){
@@ -824,15 +831,9 @@ function renderFindRaceModal(){
   const loading = findCtx.status === 'loading';
   openModal(`
     <div class="modal-head"><div class="modal-title">日付・開催場からレースを探す</div><button class="icon-btn" onclick="closeModal()">✕</button></div>
-    <div class="hint">日付を選んで検索すると、その日に開催されている競馬場とレース一覧が出ます。分析したいレースをタップすると、それより前のレースを自動でさかのぼって取得します。</div>
+    <div class="hint">日付を選んで検索すると、その日に開催されている競馬場とレース一覧(まだ走っていないレースも含む)が出ます。分析したいレースをタップすると、それより前のレースを自動でさかのぼって取得します。</div>
     <div class="field"><input type="date" id="find-date" value="${findCtx.date}" ${loading?'disabled':''}></div>
     <div class="btn-row"><button class="btn-primary" onclick="searchDay()" ${loading?'disabled':''}>${loading?'検索中...':'検索する'}</button></div>
-    ${findCtx.log && findCtx.log.length ? `
-      <div class="card" style="margin-top:10px"><div style="padding:4px 16px">
-        ${findCtx.log.map(l => `<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px;border-bottom:1px dashed var(--border)">
-          <span>${esc(l.label)}</span><span style="color:${l.ok===true?'var(--accent)':'var(--text-muted)'}">${esc(l.status)}</span>
-        </div>`).join('')}
-      </div></div>` : ''}
     ${findCtx.error ? `<div class="hint" style="padding-top:8px">${esc(findCtx.error)}</div>` : ''}
     ${venueKeys.length ? venueKeys.map(vk => `
       <div class="section-label">${esc(vk)}</div>
@@ -855,33 +856,24 @@ async function searchDay(){
   findCtx.status = 'loading';
   findCtx.error = null;
   findCtx.groups = {};
-  findCtx.log = [];
   renderFindRaceModal();
 
-  const codes = Object.keys(VENUE_CODE);
-  let foundAny = false;
-  for(const code of codes){
-    const vname = VENUE_CODE[code];
-    findCtx.log.push({label: vname, status:'確認中...', ok:null});
-    renderFindRaceModal();
-    try{
-      const html = await fetchWithProxies(venueDayUrl(code, findCtx.date));
-      const races = parseDayListHTML(html).filter(r => r.parts.venueCode === code);
-      if(races.length){
-        findCtx.groups[vname] = races;
-        findCtx.log[findCtx.log.length-1] = {label: vname, status:`${races.length}レース`, ok:true};
-        foundAny = true;
-      } else {
-        findCtx.log[findCtx.log.length-1] = {label: vname, status:'開催なし', ok:false};
-      }
-    }catch(e){
-      findCtx.log[findCtx.log.length-1] = {label: vname, status:'取得失敗', ok:false};
+  try{
+    const html = await fetchWithProxies(dayCardUrl(findCtx.date));
+    const races = parseDayListHTML(html);
+    if(!races.length){
+      findCtx.error = 'この日のレースが見つかりませんでした(開催がない日か、取得に失敗した可能性があります)。中継サーバーの設定(設定アイコン)もご確認ください。';
+    } else {
+      const groups = {};
+      races.forEach(r => {
+        const vname = r.parts.venueName || '不明';
+        groups[vname] = groups[vname] || [];
+        groups[vname].push(r);
+      });
+      findCtx.groups = groups;
     }
-    renderFindRaceModal();
-    await new Promise(r => setTimeout(r, 250));
-  }
-  if(!foundAny){
-    findCtx.error = 'この日はどの競馬場も開催が見つかりませんでした。取得にすべて失敗している場合は中継サーバーの設定(設定アイコン)をご確認ください。';
+  }catch(e){
+    findCtx.error = '取得に失敗しました。中継サーバーの設定(設定アイコン)を確認するか、「代わりにレースURLを直接指定する」をお試しください。';
   }
   findCtx.status = 'idle';
   renderFindRaceModal();
