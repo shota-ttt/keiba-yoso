@@ -26,16 +26,16 @@ async function decodeBody(resp) {
 
   if (!charset) {
     // <meta charset="..."> はASCIIなので、多少文字化けしても正規表現では拾える
-    const sniff = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 4096));
+    const sniff = new TextDecoder('utf-8', { fatal: false, ignoreBOM: false }).decode(bytes.slice(0, 4096));
     m = sniff.match(/charset=["']?([\w-]+)/i);
     if (m) charset = m[1].toLowerCase();
   }
   if (!charset) charset = 'utf-8';
 
   try {
-    return new TextDecoder(charset, { fatal: false }).decode(bytes);
+    return new TextDecoder(charset, { fatal: false, ignoreBOM: false }).decode(bytes);
   } catch (e) {
-    return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    return new TextDecoder('utf-8', { fatal: false, ignoreBOM: false }).decode(bytes);
   }
 }
 
