@@ -841,7 +841,7 @@ function renderFindRaceModal(){
         ${findCtx.groups[vk].slice().sort((a,b)=>a.parts.raceNo-b.parts.raceNo).map(r => `
           <div class="race-item" onclick="pickFoundRace('${r.id}')">
             <div class="race-no">${r.parts.raceNo}R</div>
-            <div style="flex:1"><div class="race-name">${esc(r.label)||'(レース名不明)'}</div></div>
+            <div style="flex:1"><div class="race-name">${esc(r.label)||'(レース名不明)'}</div><div style="font-size:10px;color:var(--text-muted)">id:${r.id} / 場:${r.parts.venueCode} / 回:${r.parts.kai} / 日:${r.parts.day}</div></div>
             <span class="chev">▶</span>
           </div>`).join('')}
       </div>
