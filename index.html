@@ -867,8 +867,9 @@ async function searchDay(){
       const groups = {};
       races.forEach(r => {
         const vname = r.parts.venueName || '不明';
-        groups[vname] = groups[vname] || [];
-        groups[vname].push(r);
+        const gkey = `${vname} (${r.parts.kai}回${r.parts.day}日目)`;
+        groups[gkey] = groups[gkey] || [];
+        groups[gkey].push(r);
       });
       findCtx.groups = groups;
     }
