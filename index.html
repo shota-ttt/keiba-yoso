@@ -107,6 +107,7 @@ footer.sp{height:24px}
     <div class="header-title" id="headerTitle">トラックバイアス予想</div>
     <div class="header-sub" id="headerSub"></div>
   </div>
+  <button class="icon-btn" onclick="openSettingsModal()">⚙️</button>
   <button class="icon-btn" onclick="openInfoModal()">❓</button>
 </div>
 
@@ -312,10 +313,11 @@ function renderToday(){
       <input type="date" value="${session.date}" onchange="changeDate(this.value)">
     </div>
     <div class="btn-row" style="margin-top:8px">
-      <button class="btn-primary" onclick="openBulkFetchModal()">🏁 レースを指定して一括取得</button>
+      <button class="btn-primary" onclick="openFindRaceModal()">📅 日付・開催場からレースを探す</button>
     </div>
-    <div class="btn-row" style="margin-top:6px">
-      <button class="link-btn" style="width:100%;text-align:center" onclick="openAddRaceModal()">個別にレースを追加・修正</button>
+    <div class="btn-row" style="margin-top:6px;gap:16px">
+      <button class="link-btn" style="width:100%;text-align:center" onclick="openBulkFetchModal()">レースURLを直接指定</button>
+      <button class="link-btn" style="width:100%;text-align:center" onclick="openAddRaceModal()">個別に追加・修正</button>
     </div>
 
     <div class="headline">
@@ -481,18 +483,38 @@ function openInfoModal(){
     <div class="hint" style="padding:16px">
       <b style="color:var(--text)">トラックバイアスとは</b><br>
       同日・同競馬場で行われた前のレースの結果（枠番・通過順位）から、その日の馬場の傾向（内枠が伸びている／先行馬が残りやすい、など）を読み取るための指標です。<br><br>
-      <b style="color:var(--text)">使い方（一括取得）</b><br>
-      1.「レースを指定して一括取得」を開く<br>
-      2. これから予想したいレース（netkeibaのレース結果ページURL、例: db.netkeiba.com/race/202605021211/）を入力<br>
-      3.「取得開始」を押すと、そのレースより前の同日・同競馬場のレースを自動でさかのぼって取得し、まとめてバイアスを算出します<br><br>
+      <b style="color:var(--text)">使い方（日付・開催場から探す）</b><br>
+      1.「📅 日付・開催場からレースを探す」を開く<br>
+      2. 日付を選んで検索すると、その日開催されている競馬場とレース名の一覧が出ます<br>
+      3. 分析したいレースをタップすると、それより前の同日・同競馬場のレースを自動でさかのぼって取得し、まとめてバイアスを算出します<br><br>
+      <b style="color:var(--text)">取得が安定しない場合</b><br>
+      無料の汎用中継サービスだけでは、netkeiba側の制限で取得に失敗することが多いです。右上の⚙️から、自分専用の中継サーバー（Cloudflare Workers、無料）のURLを登録すると、取得が大幅に安定します。設定方法はリポジトリの<code>worker/README.md</code>を参照してください。それでも失敗する場合は「レースURLを直接指定」や「個別に追加」（HTML貼り付け・手入力）で補ってください。<br><br>
       <b style="color:var(--text)">自動取得の仕組みと限界</b><br>
-      netkeibaのレースIDは「年+競馬場+開催回+日目+レース番号」の12桁でできています。指定したレースのIDからレース番号だけを1〜(指定レース-1)に変えて、同じ開催日の各レースのURLを自動的に組み立てて取得します。対応競馬場は中央競馬10場のみです。サイト側の制限（CORS）で一部レースの取得に失敗することがあり、その場合は失敗したレースだけ「個別にレースを追加」のHTML貼り付け・手入力で補ってください。<br><br>
+      netkeibaのレースIDは「年+競馬場+開催回+日目+レース番号」の12桁でできています。指定したレースのIDからレース番号だけを変えて、同じ開催日の各レースのURLを自動的に組み立てて取得しています。対応競馬場は中央競馬10場のみです。<br><br>
       <b style="color:var(--text)">脚質の判定について</b><br>
       各馬の最初のコーナー通過順位を出走頭数で割った位置から簡易的に「逃げ／先行／差し／追込」を判定しています。参考値としてご利用ください。<br><br>
       データはこの端末のブラウザ内（localStorage）のみに保存されます。
     </div>
     <footer class="sp"></footer>
   `);
+}
+
+function openSettingsModal(){
+  const current = getProxyBase();
+  openModal(`
+    <div class="modal-head"><div class="modal-title">設定</div><button class="icon-btn" onclick="closeModal()">✕</button></div>
+    <div class="hint">netkeibaの取得を安定させるための、自分専用の中継サーバー（Cloudflare Worker）のURLを登録できます。設定すると、レース取得時にこちらが優先的に使われます。</div>
+    <div class="field"><label>中継サーバーURL</label><input type="text" id="proxy-base" placeholder="https://xxxx.workers.dev/" value="${esc(current)}"></div>
+    <div class="btn-row"><button class="btn-primary" onclick="saveProxyBase()">保存する</button></div>
+    <div id="proxy-save-status" class="hint" style="padding-top:8px"></div>
+    <div class="hint" style="padding-top:14px">未設定の場合は、動作が不安定な無料の汎用中継サービスにフォールバックします。設定手順はリポジトリの <code>worker/README.md</code> を参照してください。</div>
+    <footer class="sp"></footer>
+  `);
+}
+function saveProxyBase(){
+  const v = document.getElementById('proxy-base').value;
+  setProxyBase(v);
+  document.getElementById('proxy-save-status').textContent = '保存しました。';
 }
 
 // ══════════════════════════════════════════
@@ -593,11 +615,47 @@ function parseResultHTML(raw){
   };
 }
 
+function getProxyBase(){
+  return (localStorage.getItem('cfProxyBase') || '').trim();
+}
+function setProxyBase(v){ localStorage.setItem('cfProxyBase', (v||'').trim()); }
+
+function parseDayListHTML(raw){
+  let doc;
+  try{ doc = new DOMParser().parseFromString(raw, 'text/html'); }
+  catch(e){ doc = null; }
+  if(!doc) return [];
+  const anchors = [...doc.querySelectorAll('a[href*="/race/"]')];
+  const seen = new Set();
+  const races = [];
+  anchors.forEach(a => {
+    const m = (a.getAttribute('href')||'').match(/\/race\/(\d{12})\/?/);
+    if(!m) return;
+    const id = m[1];
+    if(seen.has(id)) return;
+    const parts = decomposeRaceId(id);
+    if(!parts) return;
+    seen.add(id);
+    races.push({ id, parts, label: normText(a.textContent) || '' });
+  });
+  return races;
+}
+function dayListUrl(dateStr){
+  const ymd = (dateStr||'').replace(/-/g,'');
+  return `https://db.netkeiba.com/race/list/${ymd}/`;
+}
+
 async function fetchWithProxies(url){
-  const builders = [
+  const builders = [];
+  const custom = getProxyBase();
+  if(custom){
+    const base = custom.replace(/\/?$/, '');
+    builders.push(u => `${base}?url=${encodeURIComponent(u)}`);
+  }
+  builders.push(
     u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-    u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-  ];
+    u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`
+  );
   let lastErr = null;
   for(const build of builders){
     try{
@@ -754,6 +812,73 @@ function saveDraft(){
 }
 
 // ══════════════════════════════════════════
+//  Find race by date + venue (auto-lists that day's races)
+// ══════════════════════════════════════════
+let findCtx = {};
+function openFindRaceModal(){
+  findCtx = { date: todayStr(), status:'idle', groups:{}, error:null };
+  renderFindRaceModal();
+}
+function renderFindRaceModal(){
+  const venueKeys = Object.keys(findCtx.groups||{});
+  openModal(`
+    <div class="modal-head"><div class="modal-title">日付・開催場からレースを探す</div><button class="icon-btn" onclick="closeModal()">✕</button></div>
+    <div class="hint">日付を選んで検索すると、その日に開催されている競馬場とレース一覧が出ます。分析したいレースをタップすると、それより前のレースを自動でさかのぼって取得します。</div>
+    <div class="field"><input type="date" id="find-date" value="${findCtx.date}" ${findCtx.status==='loading'?'disabled':''}></div>
+    <div class="btn-row"><button class="btn-primary" onclick="searchDay()" ${findCtx.status==='loading'?'disabled':''}>${findCtx.status==='loading'?'検索中...':'検索する'}</button></div>
+    ${findCtx.error ? `<div class="hint" style="padding-top:8px">${esc(findCtx.error)}</div>` : ''}
+    ${venueKeys.length ? venueKeys.map(vk => `
+      <div class="section-label">${esc(vk)}</div>
+      <div class="card">
+        ${findCtx.groups[vk].slice().sort((a,b)=>a.parts.raceNo-b.parts.raceNo).map(r => `
+          <div class="race-item" onclick="pickFoundRace('${r.id}')">
+            <div class="race-no">${r.parts.raceNo}R</div>
+            <div style="flex:1"><div class="race-name">${esc(r.label)||'（レース名不明）'}</div></div>
+            <span class="chev">▶</span>
+          </div>`).join('')}
+      </div>
+    `).join('') : ''}
+    <div class="btn-row" style="margin-top:8px"><button class="link-btn" style="width:100%;text-align:center" onclick="closeModal();openBulkFetchModal()">代わりにレースURLを直接指定する</button></div>
+    <footer class="sp"></footer>
+  `);
+}
+async function searchDay(){
+  const dateInput = document.getElementById('find-date');
+  findCtx.date = dateInput.value || findCtx.date;
+  findCtx.status = 'loading';
+  findCtx.error = null;
+  findCtx.groups = {};
+  renderFindRaceModal();
+  try{
+    const html = await fetchWithProxies(dayListUrl(findCtx.date));
+    const races = parseDayListHTML(html);
+    if(!races.length){
+      findCtx.error = 'この日のレースが見つかりませんでした（開催がない日か、取得に失敗した可能性があります）。中継サーバーの設定（⚙️）もご確認ください。';
+    } else {
+      const groups = {};
+      races.forEach(r => {
+        const vname = r.parts.venueName || '不明';
+        groups[vname] = groups[vname] || [];
+        groups[vname].push(r);
+      });
+      findCtx.groups = groups;
+    }
+  }catch(e){
+    findCtx.error = '取得に失敗しました。中継サーバーの設定（⚙️）を確認するか、「代わりにレースURLを直接指定する」をお試しください。';
+  }
+  findCtx.status = 'idle';
+  renderFindRaceModal();
+}
+function pickFoundRace(id){
+  const parts = decomposeRaceId(id);
+  if(!parts) return;
+  closeModal();
+  bulkCtx = { url:'', includeTarget:false, log:[], running:false, done:false, resultSummary:null, failedNos:[], sourceLabel:`${parts.venueName||''} ${parts.raceNo}R` };
+  renderBulkFetchModal();
+  runBulkFetchForParts(parts, false);
+}
+
+// ══════════════════════════════════════════
 //  Bulk fetch (specify one race, auto-fetch the rest of the day)
 // ══════════════════════════════════════════
 function openBulkFetchModal(){
@@ -763,13 +888,17 @@ function openBulkFetchModal(){
 function renderBulkFetchModal(){
   openModal(`
     <div class="modal-head"><div class="modal-title">レースを指定して一括取得</div><button class="icon-btn" onclick="closeModal()">✕</button></div>
-    <div class="hint">分析したいレース（例：本日のメインレース）のnetkeibaレース結果ページURLを入力してください。そのレースより前の同日・同競馬場のレースを自動でさかのぼって取得し、まとめてトラックバイアスを算出します。</div>
-    <div class="field"><input type="text" id="bulk-url" placeholder="https://db.netkeiba.com/race/xxxxxxxxxxxx/" value="${esc(bulkCtx.url||'')}" ${bulkCtx.running?'disabled':''}></div>
-    <div class="field" style="display:flex;align-items:center;gap:8px">
-      <input type="checkbox" id="bulk-include" style="width:auto" ${bulkCtx.includeTarget?'checked':''} ${bulkCtx.running?'disabled':''}>
-      <label for="bulk-include" style="margin:0;font-size:13px;color:var(--text)">指定したレース自体の結果も含める（確定済みの場合）</label>
-    </div>
-    <div class="btn-row" style="margin-top:6px"><button class="btn-primary" onclick="startBulkFetch()" ${bulkCtx.running?'disabled':''}>${bulkCtx.running?'取得中...':'取得開始'}</button></div>
+    ${bulkCtx.sourceLabel ? `
+      <div class="hint">対象レース: <b style="color:var(--text)">${esc(bulkCtx.sourceLabel)}</b> — これより前の同日・同競馬場のレースを自動でさかのぼって取得します。</div>
+    ` : `
+      <div class="hint">分析したいレース（例：本日のメインレース）のnetkeibaレース結果ページURLを入力してください。そのレースより前の同日・同競馬場のレースを自動でさかのぼって取得し、まとめてトラックバイアスを算出します。</div>
+      <div class="field"><input type="text" id="bulk-url" placeholder="https://db.netkeiba.com/race/xxxxxxxxxxxx/" value="${esc(bulkCtx.url||'')}" ${bulkCtx.running?'disabled':''}></div>
+      <div class="field" style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="bulk-include" style="width:auto" ${bulkCtx.includeTarget?'checked':''} ${bulkCtx.running?'disabled':''}>
+        <label for="bulk-include" style="margin:0;font-size:13px;color:var(--text)">指定したレース自体の結果も含める（確定済みの場合）</label>
+      </div>
+      <div class="btn-row" style="margin-top:6px"><button class="btn-primary" onclick="startBulkFetch()" ${bulkCtx.running?'disabled':''}>${bulkCtx.running?'取得中...':'取得開始'}</button></div>
+    `}
     ${bulkCtx.log.length ? `
       <div class="section-label">取得状況</div>
       <div class="card"><div style="padding:4px 16px">
@@ -806,9 +935,13 @@ async function startBulkFetch(){
     renderBulkFetchModal();
     return;
   }
-  const lastNo = parts.raceNo + (bulkCtx.includeTarget ? 0 : -1);
+  await runBulkFetchForParts(parts, bulkCtx.includeTarget);
+}
+async function runBulkFetchForParts(parts, includeTarget){
+  const lastNo = parts.raceNo + (includeTarget ? 0 : -1);
   if(lastNo < 1){
     bulkCtx.log = [{label:`${parts.raceNo}R`, status:'これより前のレースがありません', ok:false}];
+    bulkCtx.running = false; bulkCtx.done = true;
     renderBulkFetchModal();
     return;
   }
